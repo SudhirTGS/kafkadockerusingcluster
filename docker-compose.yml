@@ -1,0 +1,85 @@
+# Docker Compose version
+version: '3'
+
+services:
+  # ZooKeeper Service - Used for distributed coordination and maintaining configuration
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: my-kafka-zookeeper    # Custom container name
+    hostname: zookeeper                   # Hostname for network resolution
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181    # Port where ZooKeeper will listen for clients
+      ZOOKEEPER_TICK_TIME: 2000      # Basic time unit in milliseconds
+    ports:
+      - "2181:2181"    # Expose ZooKeeper client port to host
+    networks:
+      - kafka-net      # Attach to kafka network
+
+  # Kafka Broker 1
+  kafka1:
+    image: confluentinc/cp-kafka:7.3.0    # Using specific version for stability
+    container_name: my-kafka-broker1      # Custom container name
+    hostname: kafka1
+    depends_on:
+      - zookeeper    # Ensure ZooKeeper starts first
+    ports:
+      - "9092:9092"  # Expose Kafka port to host
+    environment:
+      KAFKA_BROKER_ID: 1    # Unique ID of this broker
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181    # ZooKeeper connection string
+      # Kafka listener configurations
+      KAFKA_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Cluster settings - now supporting replication
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1  # Single replica for active-passive setup
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1        # Single replica for new topics
+      KAFKA_MIN_INSYNC_REPLICAS: 1               # Minimum replicas for writes
+    networks:
+      - kafka-net
+      
+  # Kafka Broker 2
+  kafka2:
+    image: confluentinc/cp-kafka:7.3.0    # Using specific version for stability
+    container_name: my-kafka-broker2      # Custom container name
+    hostname: kafka2
+    depends_on:
+      - zookeeper    # Ensure ZooKeeper starts first
+    ports:
+      - "9093:9093"  # Different port for second broker
+    environment:
+      KAFKA_BROKER_ID: 2    # Unique ID for second broker
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181    # ZooKeeper connection string
+      # Kafka listener configurations - note the different ports
+      KAFKA_LISTENERS: PLAINTEXT://kafka2:29093,PLAINTEXT_HOST://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:29093,PLAINTEXT_HOST://localhost:9093
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Cluster settings - match broker 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+    networks:
+      - kafka-net
+
+  # Kafka UI - Web interface for managing Kafka clusters
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: my-kafka-ui           # Custom container name
+    depends_on:
+      - kafka1    # Ensure Kafka brokers are started first
+      - kafka2
+    ports:
+      - "8080:8080"    # Web UI port
+    environment:
+      KAFKA_CLUSTERS_0_NAME: my-kafka-cluster    # Custom name for the cluster in UI
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:29092,kafka2:29093    # Both Kafka broker addresses
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181        # ZooKeeper address
+    networks:
+      - kafka-net
+
+# Define custom network for kafka services
+networks:
+  kafka-net:
+    driver: bridge    # Using bridge network driver for container communication
